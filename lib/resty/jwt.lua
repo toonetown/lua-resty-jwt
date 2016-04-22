@@ -577,32 +577,6 @@ local function validate_lifetime(jwt_obj, leeway, require_nbf_claim, require_exp
   end
 end
 
---@function validate issuers - ensure issuer belong to a whitelist
---@param jwt_obj, validation_options
-local function validate_iss(jwt_obj, valid_issuers)
-  if valid_issuers == nil then
-    return
-  end
-
-  local issuer = jwt_obj[str_const.payload][str_const.iss]
-
-  if issuer == nil then
-    error( { reason = "jwt lacks the 'iss' claim." } )
-  end
-
-  if type(issuer) ~= str_const.string then
-    error( { reason = "jwt 'iss' claim is malformed. Expected to be a string." } )
-  end
-
-  for i, valid_issuer in ipairs(valid_issuers) do
-    if issuer == valid_issuer then
-       return
-    end
-  end
-
-  error( { reason = "jwt 'iss' claim doesn't belong to the list of valid issuers." } )
-end
-
 local function apply_validators(jwt_obj, validators)
   if jwt_obj[str_const.reason] ~= nil then
     return false
@@ -700,16 +674,21 @@ local function get_validators_from_legacy_options(self, options)
   ngx.log(ngx.WARN, "Using *DEPRECATED* legacy validation options")
   
   local validators = { }
-
-  ensure_is_table_of_strings_or_nil(
-      string.format("'%s' validation option", str_const.valid_issuers),
-      options[str_const.valid_issuers])
+  local jwt_validators = require "resty.jwt-validators"
 
   if options[str_const.valid_issuers] ~= nil then
-    table.insert(validators,
-      function (jwt_obj)
-        validate_iss(jwt_obj, options[str_const.valid_issuers])
-      end)
+    -- validators[str_const.iss] = jwt_validators.equals_any_of(options[str_const.valid_issuers])
+    local opt = options[str_const.valid_issuers]
+    local claim = str_const.iss
+    local fx = jwt_validators.equals_any_of(opt)
+    
+    table.insert(validators, function (_jwt_obj)
+      local val = _jwt_obj.payload[claim];
+      local jwt_json = cjson_encode(_jwt_obj)
+      if fx(val, claim, jwt_json) == false then
+        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim, val) })
+      end
+    end)
   end
 
   if not is_nil_or_positive_number(options[str_const.lifetime_grace_period]) then
