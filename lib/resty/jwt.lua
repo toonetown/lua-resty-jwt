@@ -699,26 +699,6 @@ end
 local function get_validators_from_legacy_options(self, options)
   ngx.log(ngx.WARN, "Using *DEPRECATED* legacy validation options")
   
-  if options == nil then
-    options = self.get_default_validation_options()
-  end
-
-  if type(options) ~= str_const.table then
-    error("'options' is expected to be a table")
-  end
-
-  local known_options = { }
-  known_options[str_const.valid_issuers]=1
-  known_options[str_const.lifetime_grace_period]=1
-  known_options[str_const.require_nbf_claim]=1
-  known_options[str_const.require_exp_claim]=1
-
-  for k in pairs(options) do
-    if known_options[k] == nil then
-      error(string.format("'%s' isn't a valid option name", k))
-    end
-  end
-
   local validators = { }
 
   ensure_is_table_of_strings_or_nil(
@@ -755,18 +735,28 @@ local function get_validators_from_legacy_options(self, options)
 end
 
 local function is_legacy_validation_options(options)
-  local known_options = { }
-  known_options[str_const.valid_issuers]=1
-  known_options[str_const.lifetime_grace_period]=1
-  known_options[str_const.require_nbf_claim]=1
-  known_options[str_const.require_exp_claim]=1
 
+  -- Validation options MUST be a table
+  if type(options) ~= str_const.table then 
+    return false
+  end
+
+  -- Validation options MUST have at least one of these, and must ONLY have these
+  local legacy_options = { }
+  legacy_options[str_const.valid_issuers]=1
+  legacy_options[str_const.lifetime_grace_period]=1
+  legacy_options[str_const.require_nbf_claim]=1
+  legacy_options[str_const.require_exp_claim]=1
+
+  local is_legacy = false
   for k in pairs(options) do
-    if known_options[k] ~= nil then
-      return true
+    if legacy_options[k] ~= nil then
+      is_legacy = true
+    else
+      return false
     end
   end
-  return false
+  return is_legacy
 end
 
 local function validate_claims(self, jwt_obj, ...)
