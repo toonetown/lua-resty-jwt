@@ -704,6 +704,43 @@ local function get_validators_from_legacy_options(self, options)
   end
 
   if options[str_const.lifetime_grace_period] ~= nil or options[str_const.require_nbf_claim] ~= nil or options[str_const.require_exp_claim] ~= nil then
+    local claim_nbf = str_const.nbf
+    local fx_nbf
+    if options[str_const.require_nbf_claim] == true then
+      -- validators[str_const.nbf] = jwt_validators.is_not_before()
+      fx_nbf = jwt_validators.is_not_before()
+    else
+      -- validators[str_const.nbf] = jwt_validators.opt_is_not_before()
+      fx_nbf = jwt_validators.opt_is_not_before()
+    end
+
+    table.insert(validators, function (_jwt_obj)
+      local val = _jwt_obj.payload[claim_nbf];
+      local jwt_json = cjson_encode(_jwt_obj)
+      if fx_nbf(val, claim_nbf, jwt_json) == false then
+        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim_nbf, val) })
+      end
+    end)
+
+
+    local claim_exp = str_const.exp
+    local fx_exp
+    if options[str_const.require_exp_claim] == true then
+      -- validators[str_const.exp] = jwt_validators.is_not_expired()
+      fx_exp = jwt_validators.is_not_expired()
+    else
+      -- validators[str_const.exp] = jwt_validators.opt_is_not_expired()
+      fx_exp = jwt_validators.opt_is_not_expired()
+    end
+
+    table.insert(validators, function (_jwt_obj)
+      local val = _jwt_obj.payload[claim_exp];
+      local jwt_json = cjson_encode(_jwt_obj)
+      if fx_exp(val, claim_exp, jwt_json) == false then
+        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim_exp, val) })
+      end
+    end)
+    
     table.insert(validators,
       function (jwt_obj)
         validate_lifetime(jwt_obj, options[str_const.lifetime_grace_period], options[str_const.require_nbf_claim], options[str_const.require_exp_claim])
