@@ -691,8 +691,8 @@ local function get_validators_from_legacy_options(self, options)
     end)
   end
 
-  if not is_nil_or_positive_number(options[str_const.lifetime_grace_period]) then
-    error(string.format("'%s' validation option is expected to be zero or a positive number of seconds.", str_const.lifetime_grace_period))
+  if options[str_const.lifetime_grace_period] ~= nil then
+    jwt_validators.set_system_leeway(options[str_const.lifetime_grace_period] or 0)    
   end
 
   if not is_nil_or_boolean(options[str_const.require_nbf_claim]) then
