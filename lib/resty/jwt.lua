@@ -677,22 +677,20 @@ local function get_validators_from_legacy_options(self, options)
   local jwt_validators = require "resty.jwt-validators"
 
   if options[str_const.valid_issuers] ~= nil then
-    -- validators[str_const.iss] = jwt_validators.equals_any_of(options[str_const.valid_issuers])
-    local opt = options[str_const.valid_issuers]
-    local claim = str_const.iss
-    local fx = jwt_validators.equals_any_of(opt)
-    
-    table.insert(validators, function (_jwt_obj)
-      local val = _jwt_obj.payload[claim];
-      local jwt_json = cjson_encode(_jwt_obj)
-      if fx(val, claim, jwt_json) == false then
-        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim, val) })
-      end
-    end)
+    validators[str_const.iss] = jwt_validators.equals_any_of(options[str_const.valid_issuers])
   end
 
   if options[str_const.lifetime_grace_period] ~= nil then
     jwt_validators.set_system_leeway(options[str_const.lifetime_grace_period] or 0)    
+
+    -- If we have a leeway set, then either an NBF or an EXP should also exist requireds are added below
+    if options[str_const.require_nbf_claim] ~= true and options[str_const.require_exp_claim] ~= true then
+      validators[str_const.full_obj] = function(val)
+        if val.payload[str_const.nbf] == nil and val.payload[str_const.exp] == nil then
+          error("Both 'nbf' and 'exp' are missing.")
+        end
+      end
+    end
   end
 
   if not is_nil_or_boolean(options[str_const.require_nbf_claim]) then
@@ -704,47 +702,17 @@ local function get_validators_from_legacy_options(self, options)
   end
 
   if options[str_const.lifetime_grace_period] ~= nil or options[str_const.require_nbf_claim] ~= nil or options[str_const.require_exp_claim] ~= nil then
-    local claim_nbf = str_const.nbf
-    local fx_nbf
     if options[str_const.require_nbf_claim] == true then
-      -- validators[str_const.nbf] = jwt_validators.is_not_before()
-      fx_nbf = jwt_validators.is_not_before()
+      validators[str_const.nbf] = jwt_validators.is_not_before()
     else
-      -- validators[str_const.nbf] = jwt_validators.opt_is_not_before()
-      fx_nbf = jwt_validators.opt_is_not_before()
+      validators[str_const.nbf] = jwt_validators.opt_is_not_before()
     end
 
-    table.insert(validators, function (_jwt_obj)
-      local val = _jwt_obj.payload[claim_nbf];
-      local jwt_json = cjson_encode(_jwt_obj)
-      if fx_nbf(val, claim_nbf, jwt_json) == false then
-        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim_nbf, val) })
-      end
-    end)
-
-
-    local claim_exp = str_const.exp
-    local fx_exp
     if options[str_const.require_exp_claim] == true then
-      -- validators[str_const.exp] = jwt_validators.is_not_expired()
-      fx_exp = jwt_validators.is_not_expired()
+      validators[str_const.exp] = jwt_validators.is_not_expired()
     else
-      -- validators[str_const.exp] = jwt_validators.opt_is_not_expired()
-      fx_exp = jwt_validators.opt_is_not_expired()
+      validators[str_const.exp] = jwt_validators.opt_is_not_expired()
     end
-
-    table.insert(validators, function (_jwt_obj)
-      local val = _jwt_obj.payload[claim_exp];
-      local jwt_json = cjson_encode(_jwt_obj)
-      if fx_exp(val, claim_exp, jwt_json) == false then
-        error({ reason = string.format("Claim '%s' ('%s') returned failure", claim_exp, val) })
-      end
-    end)
-    
-    table.insert(validators,
-      function (jwt_obj)
-        validate_lifetime(jwt_obj, options[str_const.lifetime_grace_period], options[str_const.require_nbf_claim], options[str_const.require_exp_claim])
-      end)
   end
 
   return validators
@@ -779,24 +747,22 @@ local function validate_claims(self, jwt_obj, ...)
   local claim_specs = {...}
   local validators = { }
   
-  -- Figure out if we are operating in "legacy" mode
-  if #claim_specs == 1 and is_legacy_validation_options(claim_specs[1]) then
-    validators = get_validators_from_legacy_options(self, claim_specs[1])
-  else
-    -- Encode the current jwt_obj and use it when calling the individual validators
-    local jwt_json = cjson_encode(jwt_obj)
-    for i, v in ipairs(claim_specs) do
-      for claim, fx in pairs(v) do
-        if type(fx) ~= str_const.funct then
-          error("Claim spec value must be a function - see jwt-validators.lua for helper functions")
-        end
-        table.insert(validators, function (_jwt_obj)
-          local val = claim == str_const.full_obj and cjson_decode(jwt_json) or _jwt_obj.payload[claim]
-          if fx(val, claim, jwt_json) == false then
-            error({ reason = string.format("Claim '%s' ('%s') returned failure", claim, val) })
-          end
-        end)
+  -- Encode the current jwt_obj and use it when calling the individual validators
+  local jwt_json = cjson_encode(jwt_obj)
+  for i, v in ipairs(claim_specs) do
+    if is_legacy_validation_options(v) then
+      v = get_validators_from_legacy_options(self, v)
+    end
+    for claim, fx in pairs(v) do
+      if type(fx) ~= str_const.funct then
+        error("Claim spec value must be a function - see jwt-validators.lua for helper functions")
       end
+      table.insert(validators, function (_jwt_obj)
+        local val = claim == str_const.full_obj and cjson_decode(jwt_json) or _jwt_obj.payload[claim]
+        if fx(val, claim, jwt_json) == false then
+          error({ reason = string.format("Claim '%s' ('%s') returned failure", claim, val) })
+        end
+      end)
     end
   end
   

@@ -424,7 +424,7 @@ everything is awesome~ :p
 GET /t
 --- response_body
 false
-jwt lacks both 'exp' and 'nbf' claims.
+Both 'nbf' and 'exp' are missing.
 --- no_error_log
 [error]
 
@@ -450,7 +450,7 @@ jwt lacks both 'exp' and 'nbf' claims.
 GET /t
 --- response_body
 false
-jwt lacks both 'exp' and 'nbf' claims.
+Both 'nbf' and 'exp' are missing.
 --- no_error_log
 [error]
 
